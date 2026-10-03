@@ -1,0 +1,148 @@
+name: Release CherryTools
+
+on:
+  push:
+    branches: [main]
+    paths: [CHANGELOG.md]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: cherrytools-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Find new changelog version
+        id: changelog
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(python3 scripts/release_notes.py version)"
+          if [[ -z "$version" ]]; then
+            echo "No versioned changelog entry yet."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          tag="v${version}"
+          if git ls-remote --exit-code --tags origin "refs/tags/${tag}" >/dev/null 2>&1; then
+            echo "${tag} already exists; nothing to publish."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          python3 scripts/release_notes.py notes > "$RUNNER_TEMP/release-notes.md"
+          echo "publish=true" >> "$GITHUB_OUTPUT"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+
+      - name: Check Developer ID and notarization secrets
+        if: steps.changelog.outputs.publish == 'true'
+        shell: bash
+        env:
+          CERTIFICATE: ${{ secrets.DEVELOPER_ID_CERTIFICATE_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.DEVELOPER_ID_CERTIFICATE_PASSWORD }}
+          NOTARY_KEY: ${{ secrets.APPLE_NOTARY_API_KEY }}
+          NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          for name in CERTIFICATE CERTIFICATE_PASSWORD NOTARY_KEY NOTARY_KEY_ID NOTARY_ISSUER_ID; do
+            if [[ -z "${!name}" ]]; then
+              echo "::error::Missing release secret: ${name}. See README.md."
+              exit 1
+            fi
+          done
+
+      - name: Import Developer ID certificate
+        if: steps.changelog.outputs.publish == 'true'
+        id: signing
+        shell: bash
+        env:
+          CERTIFICATE: ${{ secrets.DEVELOPER_ID_CERTIFICATE_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.DEVELOPER_ID_CERTIFICATE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          keychain="$RUNNER_TEMP/cherrytools-signing.keychain-db"
+          keychain_password="$(openssl rand -hex 24)"
+          printf '%s' "$CERTIFICATE" | base64 -D > "$RUNNER_TEMP/developer-id.p12"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security import "$RUNNER_TEMP/developer-id.p12" -k "$keychain" -P "$CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$keychain_password" "$keychain"
+          security list-keychains -d user -s "$keychain"
+          identity="$(security find-identity -v -p codesigning "$keychain" | awk -F '"' '/Developer ID Application/ { print $2; exit }')"
+          if [[ -z "$identity" ]]; then
+            echo "::error::The certificate does not contain a Developer ID Application signing identity."
+            exit 1
+          fi
+          echo "identity=${identity}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and sign arm64 app
+        if: steps.changelog.outputs.publish == 'true'
+        shell: bash
+        env:
+          VERSION: ${{ steps.changelog.outputs.version }}
+          SIGNING_IDENTITY: ${{ steps.signing.outputs.identity }}
+        run: |
+          set -euo pipefail
+          ./scripts/build-app.sh
+          app="dist/CherryTools.app"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${VERSION}" "$app/Contents/Info.plist"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${GITHUB_RUN_NUMBER}" "$app/Contents/Info.plist"
+          codesign --force --options runtime --timestamp --sign "$SIGNING_IDENTITY" "$app"
+          codesign --verify --deep --strict --verbose=2 "$app"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")" = "$VERSION"
+          test "$(file -b "$app/Contents/MacOS/CherryTools")" != ""
+          lipo -verify_arch arm64 "$app/Contents/MacOS/CherryTools"
+
+      - name: Notarize and package
+        if: steps.changelog.outputs.publish == 'true'
+        shell: bash
+        env:
+          VERSION: ${{ steps.changelog.outputs.version }}
+          NOTARY_KEY: ${{ secrets.APPLE_NOTARY_API_KEY }}
+          NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          app="dist/CherryTools.app"
+          key="$RUNNER_TEMP/AuthKey_${NOTARY_KEY_ID}.p8"
+          printf '%s' "$NOTARY_KEY" > "$key"
+          chmod 600 "$key"
+          ditto -c -k --keepParent "$app" "$RUNNER_TEMP/CherryTools-notary.zip"
+          notarization="$(xcrun notarytool submit "$RUNNER_TEMP/CherryTools-notary.zip" \
+            --key "$key" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID" \
+            --wait --output-format json)"
+          echo "$notarization"
+          status="$(printf '%s' "$notarization" | python3 -c 'import json, sys; print(json.load(sys.stdin)["status"])')"
+          if [[ "$status" != "Accepted" ]]; then
+            echo "::error::Apple notarization status was ${status}."
+            exit 1
+          fi
+          xcrun stapler staple "$app"
+          xcrun stapler validate "$app"
+          zip="dist/CherryTools-v${VERSION}-macOS-arm64.zip"
+          ditto -c -k --keepParent "$app" "$zip"
+          shasum -a 256 "$zip" > "${zip}.sha256"
+
+      - name: Publish GitHub Release
+        if: steps.changelog.outputs.publish == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.changelog.outputs.version }}
+          TAG: ${{ steps.changelog.outputs.tag }}
+        run: |
+          set -euo pipefail
+          zip="dist/CherryTools-v${VERSION}-macOS-arm64.zip"
+          gh release create "$TAG" "$zip" "${zip}.sha256" \
+            --target "$GITHUB_SHA" \
+            --title "CherryTools ${VERSION}" \
+            --notes-file "$RUNNER_TEMP/release-notes.md"

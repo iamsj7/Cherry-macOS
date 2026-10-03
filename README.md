@@ -28,6 +28,30 @@ Clipboard history stays on this Mac in `~/Library/Application Support/CherryTool
 
 The locally signed bundle is for development and personal installation. Distributing a downloadable app to other Macs requires Developer ID signing and notarization.
 
+## GitHub Releases
+
+Add a versioned entry at the top of [CHANGELOG.md](CHANGELOG.md) and push it to `main`:
+
+```md
+## [0.1.0] - 2026-10-03
+
+- Initial public release.
+```
+
+The [release workflow](.github/workflows/release.yml) runs on an Apple Silicon GitHub runner whenever `CHANGELOG.md` changes. It reads the newest version, skips versions that already have a Git tag, builds an arm64 app, signs it with your Developer ID, notarizes and staples it, then publishes a ZIP and SHA-256 checksum as a GitHub Release. The changelog entry becomes the release notes. The app version inside the ZIP comes from the heading. You can rerun the workflow manually from the Actions tab after fixing a failed run.
+
+Before the first release, add these repository Actions secrets under **Settings → Secrets and variables → Actions**:
+
+| Secret | Value |
+| --- | --- |
+| `DEVELOPER_ID_CERTIFICATE_BASE64` | Base64 text of an exported **Developer ID Application** `.p12` certificate and private key. On macOS: `base64 < certificate.p12 | tr -d '\n'`. |
+| `DEVELOPER_ID_CERTIFICATE_PASSWORD` | Password used when exporting that `.p12` file. |
+| `APPLE_NOTARY_API_KEY` | Contents of a **team** App Store Connect API key `.p8` file. Individual API keys cannot use `notarytool`. |
+| `APPLE_NOTARY_KEY_ID` | Key ID for that API key. |
+| `APPLE_NOTARY_ISSUER_ID` | Issuer ID for that API key. |
+
+Keep these credentials out of the repository. A missing secret or failed notarization stops publication, so the workflow never labels an unnotarized build as a public release. The changelog starts without a version entry; add `0.1.0` after configuring the secrets to publish the first build.
+
 ## License
 
 CherryTools is released under [the Unlicense](UNLICENSE). Anyone may use, modify, redistribute, or sell it without attribution requirements. Made by Shaik Jaleel in Muscat.
