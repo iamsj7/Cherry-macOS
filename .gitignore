@@ -1,0 +1,17 @@
+# SwiftPM and local app builds
+.build/
+.swiftpm/
+dist/
+DerivedData/
+
+# Xcode and macOS user files
+*.xcuserstate
+xcuserdata/
+.DS_Store
+*.swp
+*.swo
+
+# Local environment files
+.env
+.env.*
+!.env.example
