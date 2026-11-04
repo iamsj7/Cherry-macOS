@@ -10,6 +10,10 @@ CherryTools is a native Apple Silicon macOS menu bar utility for inspecting port
 - **Toolbox:** Quick fixes for your Mac. **Flush DNS Cache** clears saved website addresses after macOS asks for your administrator password.
 - **Settings:** Configure launch at login, menu bar icon visibility, the menu bar port count, clipboard history, and Finder cut. Right-click the menu bar icon for quick actions. **Control–Option–Command–M** restores a hidden menu bar icon, and opening CherryTools again also shows the panel.
 
+## Install
+
+Download the latest ZIP from [Releases](https://github.com/iamsj7/Cherry-macOS/releases), then drag `CherryTools.app` to your Applications folder. Each release includes full install steps. Builds that are not yet notarized by Apple are marked as pre-releases and need a one-time approval in System Settings.
+
 ## Build and run
 
 Install Xcode and its command line tools on an Apple Silicon Mac, then run:
@@ -48,7 +52,7 @@ CherryTools reads ports and process details from macOS directly every eight seco
 
 Finder cut sees key presses sent to Finder only. Keys typed in other apps never reach it.
 
-The locally signed bundle is for development and personal installation. Distributing a downloadable app to other Macs requires Developer ID signing and notarization.
+A locally signed bundle is for development and personal installation. Apple requires Developer ID signing and notarization for a downloadable app to open without a Gatekeeper warning.
 
 ## GitHub Releases
 
@@ -60,9 +64,9 @@ Add a versioned entry at the top of [CHANGELOG.md](CHANGELOG.md) and push it to 
 - Initial public release.
 ```
 
-The [CI workflow](.github/workflows/ci.yml) tests and builds every push and pull request without signing, which also proves the release build path. The [release workflow](.github/workflows/release.yml) runs on an Apple Silicon GitHub runner whenever `CHANGELOG.md` changes. It reads the newest version, skips versions that already have a Git tag, runs the tests, builds an arm64 app, signs it with your Developer ID, notarizes and staples it, then publishes a ZIP and SHA-256 checksum as a GitHub Release. The changelog entry becomes the release notes. The app version inside the ZIP comes from the heading. You can rerun the workflow manually from the Actions tab after fixing a failed run.
+The [CI workflow](.github/workflows/ci.yml) tests and builds every push to `main` and every pull request without signing. The [release workflow](.github/workflows/release.yml) runs on an Apple Silicon GitHub runner whenever `CHANGELOG.md` changes on `main`. It reads the newest version, skips versions that already have a Git tag, runs the tests, builds an arm64 app, and publishes a ZIP and SHA-256 checksum as a GitHub Release. The changelog entry and the install guides in [.github/release](.github/release) become the release notes. The app version inside the ZIP comes from the heading. You can rerun the workflow manually from the Actions tab after fixing a failed run.
 
-Before the first release, add these repository Actions secrets under **Settings → Secrets and variables → Actions**:
+Without signing secrets, the workflow publishes an unnotarized build, marked as a pre-release, with install steps for approving it in System Settings. To publish notarized releases, add these repository Actions secrets under **Settings → Secrets and variables → Actions**:
 
 | Secret | Value |
 | --- | --- |
@@ -72,7 +76,7 @@ Before the first release, add these repository Actions secrets under **Settings 
 | `APPLE_NOTARY_KEY_ID` | Key ID for that API key. |
 | `APPLE_NOTARY_ISSUER_ID` | Issuer ID for that API key. |
 
-Keep these credentials out of the repository. A missing secret or failed notarization stops publication, so the workflow never labels an unnotarized build as a public release. The changelog starts without a version entry; add `0.1.0` after configuring the secrets to publish the first build.
+Keep these credentials out of the repository. If only some secrets are set, or notarization fails, nothing is published.
 
 ## License
 
