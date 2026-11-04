@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   release:
-    runs-on: macos-15
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
 
@@ -40,6 +40,14 @@ jobs:
           echo "publish=true" >> "$GITHUB_OUTPUT"
           echo "version=${version}" >> "$GITHUB_OUTPUT"
           echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+
+      - name: Run tests
+        if: steps.changelog.outputs.publish == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tests/test_release_notes.py
+          swift test
 
       - name: Check Developer ID and notarization secrets
         if: steps.changelog.outputs.publish == 'true'
@@ -100,7 +108,7 @@ jobs:
           codesign --verify --deep --strict --verbose=2 "$app"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")" = "$VERSION"
           test "$(file -b "$app/Contents/MacOS/CherryTools")" != ""
-          lipo -verify_arch arm64 "$app/Contents/MacOS/CherryTools"
+          lipo "$app/Contents/MacOS/CherryTools" -verify_arch arm64
 
       - name: Notarize and package
         if: steps.changelog.outputs.publish == 'true'
