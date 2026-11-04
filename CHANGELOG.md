@@ -2,6 +2,10 @@
 
 Add a new version at the top to publish a GitHub Release. The required format is documented in the README.
 
+## [0.1.1] - 2026-11-05
+
+- **Security:** The download now uses the macOS hardened runtime, which protects CherryTools and its Accessibility permission from code injection. Please use this version instead of 0.1.0.
+
 ## [0.1.0] - 2026-11-05
 
 First public release of CherryTools, a menu bar utility for Apple silicon Macs.
