@@ -17,7 +17,9 @@ jobs:
   release:
     runs-on: macos-26
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: Find new changelog version
         id: changelog
@@ -118,8 +120,10 @@ jobs:
           if [[ "$NOTARIZED" == "true" ]]; then
             codesign --force --options runtime --timestamp --sign "$SIGNING_IDENTITY" "$app"
           else
-            codesign --force --sign - "$app"
+            codesign --force --options runtime --sign - "$app"
           fi
+          signature="$(codesign -dv "$app" 2>&1)"
+          [[ "$signature" == *"flags="*"runtime"* ]]
           codesign --verify --deep --strict --verbose=2 "$app"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")" = "$VERSION"
           test "$(file -b "$app/Contents/MacOS/CherryTools")" != ""

@@ -12,7 +12,9 @@ jobs:
   test:
     runs-on: macos-26
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: Run tests
         run: |
@@ -23,4 +25,6 @@ jobs:
         run: |
           ./scripts/build-app.sh
           codesign --verify --strict --verbose=2 dist/CherryTools.app
+          signature="$(codesign -dv dist/CherryTools.app 2>&1)"
+          [[ "$signature" == *"flags="*"runtime"* ]]
           lipo dist/CherryTools.app/Contents/MacOS/CherryTools -verify_arch arm64
