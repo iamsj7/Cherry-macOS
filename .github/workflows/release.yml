@@ -108,7 +108,7 @@ jobs:
           codesign --verify --deep --strict --verbose=2 "$app"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")" = "$VERSION"
           test "$(file -b "$app/Contents/MacOS/CherryTools")" != ""
-          lipo -verify_arch arm64 "$app/Contents/MacOS/CherryTools"
+          lipo "$app/Contents/MacOS/CherryTools" -verify_arch arm64
 
       - name: Notarize and package
         if: steps.changelog.outputs.publish == 'true'

@@ -23,4 +23,4 @@ jobs:
         run: |
           ./scripts/build-app.sh
           codesign --verify --strict --verbose=2 dist/CherryTools.app
-          lipo -verify_arch arm64 dist/CherryTools.app/Contents/MacOS/CherryTools
+          lipo dist/CherryTools.app/Contents/MacOS/CherryTools -verify_arch arm64
