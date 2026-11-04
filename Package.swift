@@ -7,7 +7,7 @@ let package = Package(
     products: [.executable(name: "CherryTools", targets: ["CherryTools"])],
     targets: [
         .target(name: "CProcessMetrics", path: "Sources/CProcessMetrics", publicHeadersPath: "include"),
-        .executableTarget(name: "CherryTools", dependencies: ["CProcessMetrics"], path: "Sources/CherryTools")
-    ],
-    swiftLanguageModes: [.v5]
+        .executableTarget(name: "CherryTools", dependencies: ["CProcessMetrics"], path: "Sources/CherryTools"),
+        .testTarget(name: "CherryToolsTests", dependencies: ["CherryTools"], path: "tests/CherryToolsTests")
+    ]
 )

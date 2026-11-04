@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Read the newest version and release notes from CHANGELOG.md."""
 
+from __future__ import annotations
+
 import argparse
 import datetime
 import pathlib

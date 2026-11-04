@@ -1,0 +1,26 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run tests
+        run: |
+          python3 tests/test_release_notes.py
+          swift test
+
+      - name: Build app
+        run: |
+          ./scripts/build-app.sh
+          codesign --verify --strict --verbose=2 dist/CherryTools.app
+          lipo -verify_arch arm64 dist/CherryTools.app/Contents/MacOS/CherryTools
