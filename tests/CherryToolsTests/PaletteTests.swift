@@ -49,7 +49,8 @@ final class PaletteTests: XCTestCase {
                 let backgrounds: [(String, RGB)] = [
                     ("window", window),
                     ("control", RGB(NSColor.controlBackgroundColor).over(window)),
-                    ("under page", RGB(NSColor.underPageBackgroundColor).over(window)),
+                    ("text", RGB(NSColor.textBackgroundColor).over(window)),
+                    ("grouped row", RGB(NSColor.quaternarySystemFill).over(window)),
                     ("hover", RGB(NSColor.labelColor.withAlphaComponent(0.06)).over(window)),
                     ("selected row", RGB(NSColor.controlAccentColor.withAlphaComponent(0.16)).over(window))
                 ]
@@ -86,7 +87,7 @@ final class PaletteTests: XCTestCase {
 
     func testSelectionBarMeetsNonTextContrast() {
         forEachAppearance { name, backgrounds in
-            let selected = backgrounds[4].1
+            let selected = backgrounds[backgrounds.count - 1].1
             let ratio = contrast(RGB(NSColor.labelColor).over(selected), selected)
             XCTAssertGreaterThanOrEqual(ratio, 3, name.rawValue)
         }
