@@ -17,7 +17,7 @@ jobs:
   release:
     runs-on: macos-26
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Find new changelog version
         id: changelog
@@ -49,8 +49,9 @@ jobs:
           python3 tests/test_release_notes.py
           swift test
 
-      - name: Check Developer ID and notarization secrets
+      - name: Choose signing mode
         if: steps.changelog.outputs.publish == 'true'
+        id: mode
         shell: bash
         env:
           CERTIFICATE: ${{ secrets.DEVELOPER_ID_CERTIFICATE_BASE64 }}
@@ -60,15 +61,24 @@ jobs:
           NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
         run: |
           set -euo pipefail
+          present=0
           for name in CERTIFICATE CERTIFICATE_PASSWORD NOTARY_KEY NOTARY_KEY_ID NOTARY_ISSUER_ID; do
-            if [[ -z "${!name}" ]]; then
-              echo "::error::Missing release secret: ${name}. See README.md."
-              exit 1
-            fi
+            if [[ -n "${!name}" ]]; then present=$((present + 1)); fi
           done
+          case "$present" in
+            5) echo "notarized=true" >> "$GITHUB_OUTPUT" ;;
+            0)
+              echo "::warning::No Developer ID secrets are set. Publishing an unnotarized pre-release."
+              echo "notarized=false" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "::error::Only some release secrets are set. See README.md."
+              exit 1
+              ;;
+          esac
 
       - name: Import Developer ID certificate
-        if: steps.changelog.outputs.publish == 'true'
+        if: steps.mode.outputs.notarized == 'true'
         id: signing
         shell: bash
         env:
@@ -92,11 +102,12 @@ jobs:
           fi
           echo "identity=${identity}" >> "$GITHUB_OUTPUT"
 
-      - name: Build and sign arm64 app
+      - name: Build arm64 app
         if: steps.changelog.outputs.publish == 'true'
         shell: bash
         env:
           VERSION: ${{ steps.changelog.outputs.version }}
+          NOTARIZED: ${{ steps.mode.outputs.notarized }}
           SIGNING_IDENTITY: ${{ steps.signing.outputs.identity }}
         run: |
           set -euo pipefail
@@ -104,17 +115,20 @@ jobs:
           app="dist/CherryTools.app"
           /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${VERSION}" "$app/Contents/Info.plist"
           /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${GITHUB_RUN_NUMBER}" "$app/Contents/Info.plist"
-          codesign --force --options runtime --timestamp --sign "$SIGNING_IDENTITY" "$app"
+          if [[ "$NOTARIZED" == "true" ]]; then
+            codesign --force --options runtime --timestamp --sign "$SIGNING_IDENTITY" "$app"
+          else
+            codesign --force --sign - "$app"
+          fi
           codesign --verify --deep --strict --verbose=2 "$app"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")" = "$VERSION"
           test "$(file -b "$app/Contents/MacOS/CherryTools")" != ""
           lipo "$app/Contents/MacOS/CherryTools" -verify_arch arm64
 
-      - name: Notarize and package
-        if: steps.changelog.outputs.publish == 'true'
+      - name: Notarize
+        if: steps.mode.outputs.notarized == 'true'
         shell: bash
         env:
-          VERSION: ${{ steps.changelog.outputs.version }}
           NOTARY_KEY: ${{ secrets.APPLE_NOTARY_API_KEY }}
           NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
           NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
@@ -136,9 +150,18 @@ jobs:
           fi
           xcrun stapler staple "$app"
           xcrun stapler validate "$app"
+
+      - name: Package
+        if: steps.changelog.outputs.publish == 'true'
+        shell: bash
+        env:
+          VERSION: ${{ steps.changelog.outputs.version }}
+        run: |
+          set -euo pipefail
+          app="dist/CherryTools.app"
           zip="dist/CherryTools-v${VERSION}-macOS-arm64.zip"
           ditto -c -k --keepParent "$app" "$zip"
-          shasum -a 256 "$zip" > "${zip}.sha256"
+          (cd dist && shasum -a 256 "$(basename "$zip")" > "$(basename "$zip").sha256")
 
       - name: Publish GitHub Release
         if: steps.changelog.outputs.publish == 'true'
@@ -147,10 +170,21 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.changelog.outputs.version }}
           TAG: ${{ steps.changelog.outputs.tag }}
+          NOTARIZED: ${{ steps.mode.outputs.notarized }}
         run: |
           set -euo pipefail
           zip="dist/CherryTools-v${VERSION}-macOS-arm64.zip"
+          notes="$RUNNER_TEMP/release-notes.md"
+          flags=()
+          if [[ "$NOTARIZED" == "true" ]]; then
+            cat .github/release/install-notarized.md >> "$notes"
+          else
+            cat .github/release/install-unnotarized.md >> "$notes"
+            flags+=(--prerelease)
+          fi
+          cat .github/release/install-common.md >> "$notes"
           gh release create "$TAG" "$zip" "${zip}.sha256" \
             --target "$GITHUB_SHA" \
             --title "CherryTools ${VERSION}" \
-            --notes-file "$RUNNER_TEMP/release-notes.md"
+            --notes-file "$notes" \
+            "${flags[@]}"
