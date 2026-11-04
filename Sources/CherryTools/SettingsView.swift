@@ -149,8 +149,8 @@ struct SettingsView: View {
     private var clipboardSettings: some View {
         Form {
             Section {
-                Toggle("Save clipboard history", isOn: Binding(get: { clipboard.isEnabled }, set: clipboard.setEnabled))
-                Toggle("Pause saving", isOn: Binding(get: { clipboard.isPaused }, set: clipboard.setPaused))
+                Toggle("Save clipboard history", isOn: Binding(get: { clipboard.isEnabled }, set: { clipboard.setEnabled($0) }))
+                Toggle("Pause saving", isOn: Binding(get: { clipboard.isPaused }, set: { clipboard.setPaused($0) }))
                     .disabled(!clipboard.isEnabled)
                 LabeledContent("Retention", value: "30 days")
                 LabeledContent("Saved items", value: clipboard.clips.count.formatted())
